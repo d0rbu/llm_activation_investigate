@@ -48,7 +48,7 @@ def get_activations(
     # Load model
     print("Loading model...")
     model = AutoModel.from_pretrained(
-        model_name, device_map="balanced", output_attentions=get_attentions, output_hidden_states=get_hidden_states, return_dict=True
+        model_name, device_map="balanced", output_attentions=get_attentions, output_hidden_states=get_hidden_states, return_dict=True,
     )
     model.resize_token_embeddings(len(tokenizer))
     model.eval()

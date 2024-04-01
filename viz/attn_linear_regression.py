@@ -9,7 +9,7 @@ from exp.get_activations import ATTN_PATH
 
 def linear_regression_heatmap(
     dataset: str = "ivanzhouyq/RedPajama-Tiny",
-    model_name: str = "meta-llama/Llama-7b-hf",
+    model_name: str = "meta-llama/Llama-2-7b-hf",
     output_dir: str = "out",
     figures_dir: str = "figures",
 ) -> None:
@@ -19,12 +19,14 @@ def linear_regression_heatmap(
     os.makedirs(figures_dir, exist_ok=True)
 
     # Load data
+    print("Loading data...")
     flattened_attns = th.load(data_path)  # (L, H, B)
 
     # Heatmap data
     mse_heatmap = th.zeros(flattened_attns.shape[0] - 1, flattened_attns.shape[0] - 1)
     r2_heatmap = th.zeros(flattened_attns.shape[0] - 1, flattened_attns.shape[0] - 1)
 
+    print("Creating heatmaps...")
     for base_layer, predicted_layer in tqdm(product(range(flattened_attns.shape[0]), repeat=2), total=flattened_attns.shape[0] ** 2):
         if predicted_layer <= base_layer:
             continue
@@ -73,7 +75,7 @@ def linear_regression_heatmap(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="ivanzhouyq/RedPajama-Tiny")
-    parser.add_argument("--model_name", type=str, default="meta-llama/Llama-7b-hf")
+    parser.add_argument("--model_name", type=str, default="meta-llama/Llama-2-7b-hf")
     parser.add_argument("--output_dir", type=str, default="out")
     parser.add_argument("--figures_dir", type=str, default="figures")
 
