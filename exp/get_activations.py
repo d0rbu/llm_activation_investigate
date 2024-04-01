@@ -62,6 +62,7 @@ def get_activations(
                 break
             except RuntimeError:
                 batch_size //= 2
+        del test_batch
 
         # Data loader
         print("Creating data loader...")
@@ -101,6 +102,9 @@ def get_activations(
 
                 th.save(hidden_states, os.path.join(hidden_tmp_dir, f"{i}.pt"))
 
+        del data_loader, model, tokenizer, dataset, outputs, batch
+        th.cuda.empty_cache()
+
         # Collate activations
         print("Collating activations...")
         if get_attentions:
@@ -120,7 +124,7 @@ def get_activations(
                 th.save(hidden_activations, hidden_output_path)
         else:
             hidden_activations = None
-        
+
         if return_activations:
             return tuple(activation for activation in (attn_activations, hidden_activations) if activation is not None)
 
