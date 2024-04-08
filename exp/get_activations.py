@@ -112,24 +112,30 @@ def get_activations(
             outputs = model(**batch)
 
             if get_attentions:
-                causal_mask = th.ones(1, 1, batch["input_ids"].shape[1], batch["input_ids"].shape[1]).bool().cpu()  # (1, 1, T, T)
+                causal_mask = th.ones(1, batch["input_ids"].shape[1], batch["input_ids"].shape[1]).bool().cpu()  # (1, T, T)
                 causal_mask = th.tril(causal_mask)  # lower triangular mask
-                causal_mask = causal_mask.expand(model.config.num_attention_heads, batch["input_ids"].shape[0], -1, -1)  # (H, B, T, T)
+                causal_mask = causal_mask.expand(batch["input_ids"].shape[0], -1, -1)  # (B, T, T)
 
-                padding_mask = batch.attention_mask.unsqueeze(0).unsqueeze(-1).bool().cpu()  # (1, B, T, 1)
-                padding_mask = padding_mask.expand(model.config.num_attention_heads, -1, -1, padding_mask.shape[-2])  # (H, B, T, T)
+                padding_mask = batch.attention_mask.unsqueeze(-1).bool().cpu()  # (B, T, 1)
+                padding_mask = padding_mask.expand(-1, -1, padding_mask.shape[-2])  # (B, T, T)
 
-                attention_mask = th.logical_and(causal_mask, padding_mask)  # (H, B, T, T)
-                attention_mask = attention_mask.transpose(1, 0,)  # (B, H, T, T)
+                attention_mask = th.logical_and(causal_mask, padding_mask)  # (B, T, T)
+                attention_mask = attention_mask.unsqueeze(1).unsqueeze(0)  # (1, B, 1, T, T)
 
-                flattened_attentions = [attn.cpu()[attention_mask].view(model.config.num_attention_heads, -1) for attn in outputs.attentions]
-                flattened_attentions = th.stack(flattened_attentions, dim=0)  # (L, B, H)
+                th.save(attention_mask, os.path.join(attn_tmp_dir, f"{i}_mask.pt"))
+
+                flattened_attentions = [attn.cpu() for attn in outputs.attentions]
+                flattened_attentions = th.stack(flattened_attentions, dim=0)  # (L, B, H, T, T)
 
                 th.save(flattened_attentions, os.path.join(attn_tmp_dir, f"{i}.pt"))
 
                 del causal_mask, padding_mask, attention_mask, flattened_attentions
 
             if get_hidden_states:
+                padding_mask = batch.attention_mask.unsqueeze(0).unsqueeze(-1).bool().cpu()  # (1, B, T, 1)
+
+                th.save(padding_mask, os.path.join(hidden_tmp_dir, f"{i}_mask.pt"))
+
                 hidden_states = th.stack([hidden_state.cpu() for hidden_state in outputs.hidden_states])  # (L, B, T, D)
 
                 th.save(hidden_states, os.path.join(hidden_tmp_dir, f"{i}.pt"))
@@ -145,10 +151,16 @@ def get_activations(
         print("Collating activations...")
         if get_attentions:
             attn_activations = [th.load(os.path.join(attn_tmp_dir, f"{i}.pt")) for i in range(num_batches)]
-            attn_activations = th.cat(attn_activations, dim=1)  # (L, B, H)
+            attn_activations = th.cat(attn_activations, dim=1)  # (L, B, H, T, T)
+
+            attn_masks = [th.load(os.path.join(attn_tmp_dir, f"{i}_mask.pt")) for i in range(num_batches)]
+            attn_masks = th.cat(attn_masks, dim=1)  # (1, B, 1, T, T)
 
             if attn_output_path is not None:
-                th.save(attn_activations, attn_output_path)
+                th.save({
+                    "activation": attn_activations,
+                    "mask": attn_masks,
+                }, attn_output_path)
         else:
             attn_activations = None
 
@@ -156,8 +168,14 @@ def get_activations(
             hidden_activations = [th.load(os.path.join(hidden_tmp_dir, f"{i}.pt")) for i in range(num_batches)]
             hidden_activations = th.cat(hidden_activations, dim=1)  # (L, B, T, D)
 
+            hidden_masks = [th.load(os.path.join(hidden_tmp_dir, f"{i}_mask.pt")) for i in range(num_batches)]
+            hidden_masks = th.cat(hidden_masks, dim=1)  # (1, B, T, 1)
+
             if hidden_output_path is not None:
-                th.save(hidden_activations, hidden_output_path)
+                th.save({
+                    "activation": hidden_activations,
+                    "mask": hidden_masks,
+                }, hidden_output_path)
         else:
             hidden_activations = None
 
