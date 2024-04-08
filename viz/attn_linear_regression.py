@@ -22,6 +22,8 @@ def linear_regression_heatmap(
 
     # Load data
     print("Loading data...")
+    data = th.load(data_path)
+
     flattened_attns = th.load(data_path)  # (L, H, B)
     if truncate_data > 0:
         flattened_attns = flattened_attns[..., :truncate_data]

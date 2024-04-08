@@ -112,11 +112,22 @@ def get_activations(
             outputs = model(**batch)
 
             if get_attentions:
+                attentions = [attn.cpu() for attn in outputs.attentions]
+                attentions = th.stack(attentions, dim=0)  # (L, B, H, T, T)
+
+                th.save(attentions, os.path.join(attn_tmp_dir, f"{i}.pt"))
+
+                del attentions, outputs.attentions
+
+                padding_mask = batch.attention_mask.bool().cpu()  # (B, T)
+
+                th.save(padding_mask, os.path.join(attn_tmp_dir, f"{i}_padding.pt"))
+
                 causal_mask = th.ones(1, batch["input_ids"].shape[1], batch["input_ids"].shape[1]).bool().cpu()  # (1, T, T)
                 causal_mask = th.tril(causal_mask)  # lower triangular mask
                 causal_mask = causal_mask.expand(batch["input_ids"].shape[0], -1, -1)  # (B, T, T)
 
-                padding_mask = batch.attention_mask.unsqueeze(-1).bool().cpu()  # (B, T, 1)
+                padding_mask = padding_mask.unsqueeze(-1)  # (B, T, 1)
                 padding_mask = padding_mask.expand(-1, -1, padding_mask.shape[-2])  # (B, T, T)
 
                 attention_mask = th.logical_and(causal_mask, padding_mask)  # (B, T, T)
@@ -124,12 +135,7 @@ def get_activations(
 
                 th.save(attention_mask, os.path.join(attn_tmp_dir, f"{i}_mask.pt"))
 
-                flattened_attentions = [attn.cpu() for attn in outputs.attentions]
-                flattened_attentions = th.stack(flattened_attentions, dim=0)  # (L, B, H, T, T)
-
-                th.save(flattened_attentions, os.path.join(attn_tmp_dir, f"{i}.pt"))
-
-                del causal_mask, padding_mask, attention_mask, flattened_attentions
+                del causal_mask, padding_mask, attention_mask
 
             if get_hidden_states:
                 padding_mask = batch.attention_mask.unsqueeze(0).unsqueeze(-1).bool().cpu()  # (1, B, T, 1)
@@ -140,7 +146,7 @@ def get_activations(
 
                 th.save(hidden_states, os.path.join(hidden_tmp_dir, f"{i}.pt"))
 
-                del hidden_states
+                del hidden_states, padding_mask
             
             del outputs
 
@@ -156,10 +162,14 @@ def get_activations(
             attn_masks = [th.load(os.path.join(attn_tmp_dir, f"{i}_mask.pt")) for i in range(num_batches)]
             attn_masks = th.cat(attn_masks, dim=1)  # (1, B, 1, T, T)
 
+            attn_padding = [th.load(os.path.join(attn_tmp_dir, f"{i}_padding.pt")) for i in range(num_batches)]
+            attn_padding = th.cat(attn_padding, dim=1)  # (B, T)
+
             if attn_output_path is not None:
                 th.save({
                     "activation": attn_activations,
                     "mask": attn_masks,
+                    "padding": attn_padding,
                 }, attn_output_path)
         else:
             attn_activations = None
