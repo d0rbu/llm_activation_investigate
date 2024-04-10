@@ -20,6 +20,7 @@ def get_activations(
     return_activations: bool = False,
     batch_size: int | None = None,
     truncate_dataset: int = 0,
+    max_length: int = 0,
 ) -> None | tuple[th.Tensor]:
     assert get_attentions or get_hidden_states, "At least one of get_attentions or get_hidden_states must be True"
     assert output_dir is not None or return_activations, "If output_dir is None, return_activations must be True"
@@ -52,18 +53,21 @@ def get_activations(
     )
     model.resize_token_embeddings(len(tokenizer))
     model.eval()
+    
+    if max_length <= 0:
+        max_length = model.config.max_position_embeddings
 
     with TemporaryDirectory() as tmp_dir, th.no_grad():
         # Find largest batch size that works
         print("Finding optimal batch size...")
         if batch_size is None:
-            batch_size = 256
+            batch_size = 128
         while batch_size > 0:
             try:
                 print(f"Attempting batch size {batch_size}...")
 
                 test_batch = dataset[:batch_size]
-                test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=model.config.max_position_embeddings)
+                test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
 
                 th.cuda.empty_cache()
 
@@ -105,7 +109,7 @@ def get_activations(
 
         samples = 0
         for i, batch in tqdm(zip(range(num_batches), data_loader), total=min(len(data_loader), num_batches)):
-            batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=model.config.max_position_embeddings, return_attention_mask=get_attentions)
+            batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length, return_attention_mask=get_attentions)
             samples += batch["input_ids"].shape[0]
 
             th.cuda.empty_cache()
@@ -163,7 +167,7 @@ def get_activations(
             attn_masks = th.cat(attn_masks, dim=1)  # (1, B, 1, T, T)
 
             attn_padding = [th.load(os.path.join(attn_tmp_dir, f"{i}_padding.pt")) for i in range(num_batches)]
-            attn_padding = th.cat(attn_padding, dim=1)  # (B, T)
+            attn_padding = th.cat(attn_padding, dim=0)  # (B, T)
 
             if attn_output_path is not None:
                 th.save({
@@ -202,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="out")
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--truncate_dataset", type=int, default=0)
+    parser.add_argument("--max_length", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -213,4 +218,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         batch_size=args.batch_size,
         truncate_dataset=args.truncate_dataset,
+        max_length=args.max_length,
     )
