@@ -72,6 +72,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="out")
     parser.add_argument("--figures_dir", type=str, default="figures")
     parser.add_argument("--truncate_data", type=int, default=0)
+    parser.add_argument("--base_layers", type=int, nargs="+", default=(0,))
 
     args = parser.parse_args()
 
@@ -81,4 +82,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         figures_dir=args.figures_dir,
         truncate_data=args.truncate_data,
+        base_layers=args.base_layers,
     )
