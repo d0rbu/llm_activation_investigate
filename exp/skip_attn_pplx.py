@@ -54,14 +54,14 @@ def skip_attention_perplexity(
                 skip_attn_fn = SKIP_ATTN_FNS[type(model)]
             else:
                 raise ValueError(f"Model type {type(model)} not supported for skip attention")
-            
+
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             tokenizer.add_special_tokens({"pad_token": "[PAD]"})
             model.eval()
 
             if max_length <= 0:
                 max_length = model.config.max_position_embeddings
-        
+
         if current_dataset != dataset:
             # load dataset
             current_dataset = dataset
@@ -109,14 +109,18 @@ def skip_attention_perplexity(
             num_batches = len(data_loader)
         else:
             num_batches = math.ceil(truncate_dataset / batch_size)
-        
+
         result = {
             "model": model_name,
             "dataset": dataset,
             "perplexities": [],
+            "avg_perplexity": 0.0,
             "perplexities_skip_attn": [],
+            "avg_perplexity_skip_attn": 0.0,
             "loss": [],
+            "avg_loss": 0.0,
             "loss_skip_attn": [],
+            "avg_loss_skip_attn": 0.0,
         }
 
         with th.no_grad():
@@ -128,8 +132,10 @@ def skip_attention_perplexity(
                 perplexity = th.exp(loss)
 
                 result["perplexities"].extend(perplexity.tolist())
+                result["avg_perplexity"] = perplexity.mean().item()
                 result["loss"].extend(loss.tolist())
-            
+                result["avg_loss"] = loss.mean().item()
+
             print("Computing skip attention perplexities...")
             skip_attn_fn(model)  # convert model to use skip attention
 
@@ -140,8 +146,10 @@ def skip_attention_perplexity(
                 perplexity = th.exp(loss)
 
                 result["perplexities_skip_attn"].extend(perplexity.tolist())
+                result["avg_perplexity_skip_attn"] = perplexity.mean().item()
                 result["loss_skip_attn"].extend(loss.tolist())
-        
+                result["avg_loss_skip_attn"] = loss.mean().item()
+
         results.append(result)
         with open(output_location, "w") as f:
             json.dump(results, f, indent=4)
