@@ -41,7 +41,7 @@ def is_in_slices(
 def convert_to_skip_attn_llama(
     causal_model: LlamaForCausalLM,
     base_attn_layer: int = 2,
-    predicted_attn_layers: Sequence[slice] = (slice(3, -1)),
+    predicted_attn_layers: Sequence[slice] = (slice(3, -1),),
     topk_tokens: int = 8,
 ) -> None:
     # https://github.com/huggingface/transformers/blob/v4.39.3/src/transformers/models/llama/modeling_llama.py#L940
@@ -127,7 +127,7 @@ def convert_to_skip_attn_llama(
 
                 if tokens_mask is not None:
                     top_token_attn_mask = tokens_mask.unsqueeze(1).unsqueeze(1)  # (B, 1, 1, T)
-                    attn_mask = attn_mask & top_token_attn_mask  # (B, H, T, T)
+                    attn_mask = attn_mask + top_token_attn_mask  # (B, H, T, T)
 
                 layer_outputs = decoder_layer(
                     hidden_states,
@@ -141,7 +141,7 @@ def convert_to_skip_attn_llama(
 
             if i == base_attn_layer:
                 token_attn = layer_outputs[1]  # (B, H, T, T)
-                token_attn = token_attn.sum(dim=-1).sum(dim=1)  # (B, T)  how much each token is paid attention, in aggregate, to across heads
+                token_attn = token_attn.sum(dim=1).sum(dim=1)  # (B, T)  how much each token is paid attention to, in aggregate, across heads
 
                 k = min(topk_tokens, token_attn.shape[-1])
                 top_tokens = token_attn.topk(k, dim=-1).indices  # (B, topk)

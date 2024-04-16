@@ -126,6 +126,27 @@ def skip_attention_perplexity(
         }
 
         with th.no_grad():
+            print("Computing skip attention perplexities...")
+            skip_attn_fn(model)  # convert model to use skip attention
+
+            for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing skip attention perplexities"):
+                batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length).to(model.device)
+                outputs = model(**batch)
+                loss = outputs[0].mean(dim=-1).mean(dim=-1)  # (B,)
+                perplexity = th.exp(loss)
+
+                if (loss.isnan().sum() > 0):
+                    import pdb; pdb.set_trace()
+
+                result["perplexities_skip_attn"].extend(perplexity.tolist())
+                result["losses_skip_attn"].extend(loss.tolist())
+
+                del outputs, batch, loss, perplexity
+                th.cuda.empty_cache()
+
+            result["avg_perplexity_skip_attn"] = sum(result["perplexities_skip_attn"]) / len(result["perplexities_skip_attn"])
+            result["avg_loss_skip_attn"] = sum(result["losses_skip_attn"]) / len(result["losses_skip_attn"])
+
             print("Computing vanilla perplexities...")
             normal_forward_fn(model)  # convert model to use normal attention
             for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing perplexities"):
@@ -134,26 +155,17 @@ def skip_attention_perplexity(
                 loss = outputs[0].mean(dim=-1).mean(dim=-1)  # (B,)
                 perplexity = th.exp(loss)
 
+                if (loss.isnan().sum() > 0):
+                    import pdb; pdb.set_trace()
+
                 result["perplexities"].extend(perplexity.tolist())
                 result["losses"].extend(loss.tolist())
 
+                del outputs, batch, loss, perplexity
+                th.cuda.empty_cache()
+
             result["avg_perplexity"] = sum(result["perplexities"]) / len(result["perplexities"])
             result["avg_loss"] = sum(result["losses"]) / len(result["losses"])
-
-            print("Computing skip attention perplexities...")
-            skip_attn_fn(model)  # convert model to use skip attention
-
-            for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing skip attention perplexities"):
-                batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
-                outputs = model(**batch)
-                loss = outputs[0].mean(dim=-1).mean(dim=-1)  # (B,)
-                perplexity = th.exp(loss)
-
-                result["perplexities_skip_attn"].extend(perplexity.tolist())
-                result["loss_skip_attn"].extend(loss.tolist())
-
-            result["avg_perplexity_skip_attn"] = sum(result["perplexities_skip_attn"]) / len(result["perplexities_skip_attn"])
-            result["avg_loss_skip_attn"] = sum(result["losses_skip_attn"]) / len(result["losses_skip_attn"])
 
         results.append(result)
         with open(output_location, "w") as f:
