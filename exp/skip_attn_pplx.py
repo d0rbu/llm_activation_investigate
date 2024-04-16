@@ -3,21 +3,22 @@ import json
 import os
 import math
 import torch as th
-from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaModel
+import datasets
+from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM
 from tqdm import tqdm
 from typing import Sequence
 from itertools import product
-from core.skip_attn import convert_to_skip_attn_llama
+from core.skip_attn import convert_to_regular_attn_llama, convert_to_skip_attn_llama
 
 
-SKIP_ATTN_FNS = {
-    LlamaModel: convert_to_skip_attn_llama,
+FORWARD_FNS = {
+    LlamaForCausalLM: (convert_to_regular_attn_llama, convert_to_skip_attn_llama)
 }
 
 
 def skip_attention_perplexity(
     model_names: Sequence[str] = ["meta-llama/Llama-2-7b-hf"],
-    datasets: Sequence[str] = ["ivanzhouyq/RedPajama-Tiny"],
+    dataset_names: Sequence[str] = ["ivanzhouyq/RedPajama-Tiny"],
     output_dir: str = "out",
     batch_size: int | None = None,
     truncate_dataset: int = 0,
@@ -28,7 +29,7 @@ def skip_attention_perplexity(
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     if os.path.exists(output_location):
         with open(output_location, "r") as f:
             results = json.load(f)
@@ -39,33 +40,34 @@ def skip_attention_perplexity(
         model_name: None
         for model_name in model_names
     }
-    for dataset, model_name in tqdm(product(datasets, model_names), total=len(datasets) * len(model_names), desc="Evaluating models on datasets"):
+    for dataset_name, model_name in tqdm(product(dataset_names, model_names), total=len(dataset_names) * len(model_names), desc="Evaluating models on datasets"):
         # check if results already exist
-        if any(row["model"] == model_name and row["dataset"] == dataset for row in results):
+        if any(row["model"] == model_name and row["dataset"] == dataset_name for row in results):
             continue
 
         if current_model != model_name:
             # load model
             current_model = model_name
-            model = AutoModelForCausalLM.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
 
             # change model forward function to use skip attention
-            if type(model) in SKIP_ATTN_FNS:
-                skip_attn_fn = SKIP_ATTN_FNS[type(model)]
+            if type(model) in FORWARD_FNS:
+                normal_forward_fn, skip_attn_fn = FORWARD_FNS[type(model)]
             else:
                 raise ValueError(f"Model type {type(model)} not supported for skip attention")
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+            model.resize_token_embeddings(len(tokenizer))
             model.eval()
 
             if max_length <= 0:
                 max_length = model.config.max_position_embeddings
 
-        if current_dataset != dataset:
+        if current_dataset != dataset_name:
             # load dataset
-            current_dataset = dataset
-            dataset = datasets.load_dataset(dataset)["train"]
+            current_dataset = dataset_name
+            dataset = datasets.load_dataset(dataset_name)["train"]
 
         if model_batch_sizes[model_name] is None:
             # find largest batch size that works
@@ -78,7 +80,7 @@ def skip_attention_perplexity(
                         print(f"Attempting batch size {model_batch_size}...")
 
                         test_batch = dataset[:model_batch_size]
-                        test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
+                        test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length).to(model.device)
 
                         th.cuda.empty_cache()
 
@@ -112,29 +114,31 @@ def skip_attention_perplexity(
 
         result = {
             "model": model_name,
-            "dataset": dataset,
+            "dataset": dataset_name,
             "perplexities": [],
             "avg_perplexity": 0.0,
             "perplexities_skip_attn": [],
             "avg_perplexity_skip_attn": 0.0,
-            "loss": [],
+            "losses": [],
             "avg_loss": 0.0,
-            "loss_skip_attn": [],
+            "losses_skip_attn": [],
             "avg_loss_skip_attn": 0.0,
         }
 
         with th.no_grad():
             print("Computing vanilla perplexities...")
+            normal_forward_fn(model)  # convert model to use normal attention
             for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing perplexities"):
-                batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
+                batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length).to(model.device)
                 outputs = model(**batch)
-                loss = outputs[0]
+                loss = outputs[0].mean(dim=-1).mean(dim=-1)  # (B,)
                 perplexity = th.exp(loss)
 
                 result["perplexities"].extend(perplexity.tolist())
-                result["avg_perplexity"] = perplexity.mean().item()
-                result["loss"].extend(loss.tolist())
-                result["avg_loss"] = loss.mean().item()
+                result["losses"].extend(loss.tolist())
+
+            result["avg_perplexity"] = sum(result["perplexities"]) / len(result["perplexities"])
+            result["avg_loss"] = sum(result["losses"]) / len(result["losses"])
 
             print("Computing skip attention perplexities...")
             skip_attn_fn(model)  # convert model to use skip attention
@@ -142,13 +146,14 @@ def skip_attention_perplexity(
             for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing skip attention perplexities"):
                 batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
                 outputs = model(**batch)
-                loss = outputs[0]
+                loss = outputs[0].mean(dim=-1).mean(dim=-1)  # (B,)
                 perplexity = th.exp(loss)
 
                 result["perplexities_skip_attn"].extend(perplexity.tolist())
-                result["avg_perplexity_skip_attn"] = perplexity.mean().item()
                 result["loss_skip_attn"].extend(loss.tolist())
-                result["avg_loss_skip_attn"] = loss.mean().item()
+
+            result["avg_perplexity_skip_attn"] = sum(result["perplexities_skip_attn"]) / len(result["perplexities_skip_attn"])
+            result["avg_loss_skip_attn"] = sum(result["losses_skip_attn"]) / len(result["losses_skip_attn"])
 
         results.append(result)
         with open(output_location, "w") as f:
@@ -168,7 +173,7 @@ if __name__ == "__main__":
 
     skip_attention_perplexity(
         model_names=args.model_names,
-        dataset=args.dataset,
+        dataset_names=args.datasets,
         output_dir=args.output_dir,
         batch_size=args.batch_size,
         truncate_dataset=args.truncate_dataset,

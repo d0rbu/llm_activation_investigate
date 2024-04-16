@@ -1,5 +1,5 @@
 import torch as th
-from transformers import LlamaModel, LlamaTokenizer
+from transformers import LlamaModel, LlamaTokenizer, LlamaForCausalLM
 from transformers.models.llama.modeling_llama import logger
 from transformers.cache_utils import StaticCache, DynamicCache, Cache
 from transformers.modeling_outputs import BaseModelOutputWithPast
@@ -39,7 +39,7 @@ def is_in_slices(
 
 
 def convert_to_skip_attn_llama(
-    model: LlamaModel,
+    causal_model: LlamaForCausalLM,
     base_attn_layer: int = 2,
     predicted_attn_layers: Sequence[slice] = (slice(3, -1)),
     topk_tokens: int = 8,
@@ -176,5 +176,12 @@ def convert_to_skip_attn_llama(
             attentions=all_self_attns,
         )
 
-    bound_forward = skip_attn_forward.__get__(model, model.__class__)
-    setattr(model, "forward", bound_forward)
+    bound_forward = skip_attn_forward.__get__(causal_model.model, causal_model.model.__class__)
+    setattr(causal_model.model, "forward", bound_forward)
+
+
+def convert_to_regular_attn_llama(
+    causal_model: LlamaForCausalLM,
+) -> None:
+    bound_forward = LlamaModel.forward.__get__(causal_model.model, causal_model.model.__class__)
+    setattr(causal_model.model, "forward", bound_forward)
