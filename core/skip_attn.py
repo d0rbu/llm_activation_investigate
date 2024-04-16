@@ -122,12 +122,10 @@ def convert_to_skip_attn_llama(
                     cache_position,
                 )
             else:
-                tokens_mask = top_tokens_mask if is_in_slices(i, predicted_attn_layers, len(self.layers)) else None  # (B, T)
-                attn_mask = causal_mask
+                attn_mask = top_tokens_mask if is_in_slices(i, predicted_attn_layers, len(self.layers)) else causal_mask  # (B, 1, T, T)
 
-                if tokens_mask is not None:
-                    top_token_attn_mask = tokens_mask.unsqueeze(1).unsqueeze(1).expand(-1, -1, tokens_mask.shape[-1], -1)  # (B, 1, T, T)
-                    attn_mask[top_token_attn_mask != 0] = top_token_attn_mask[top_token_attn_mask != 0]  # (B, 1, T, T)
+                if is_in_slices(i, predicted_attn_layers, len(self.layers)):  # if we are doing skip attention for this layer
+                    pass
 
                 layer_outputs = decoder_layer(
                     hidden_states,
@@ -141,15 +139,19 @@ def convert_to_skip_attn_llama(
 
             if i == base_attn_layer:
                 token_attn = layer_outputs[1]  # (B, H, T, T)
-                token_attn = token_attn.sum(dim=1).sum(dim=1)  # (B, T)  how much each token is paid attention to, in aggregate, across heads
+                token_attn = token_attn.sum(dim=1)  # (B, T, T)  how much each token is paid attention to across heads
 
                 k = min(topk_tokens, token_attn.shape[-1])
-                top_tokens = token_attn.topk(k, dim=-1).indices  # (B, topk)
+                top_tokens = token_attn.topk(k, dim=-1).indices  # (B, T, topk)
 
                 dtype, device = hidden_states.dtype, hidden_states.device
                 min_dtype = th.finfo(dtype).min
-                top_tokens_mask = th.full_like(token_attn, min_dtype, dtype=dtype, device=device)  # (B, T)
-                top_tokens_mask.scatter_(-1, top_tokens, 0)  # (B, T), top tokens are 0, rest are -inf
+                top_tokens_mask = th.full_like(token_attn, min_dtype, dtype=dtype, device=device)  # (B, T, T)
+                top_tokens_mask.scatter_(-1, top_tokens, 0)  # (B, T, T), top tokens are 0, rest are -inf
+
+                # logical and with causal mask
+                top_tokens_mask = top_tokens_mask.unsqueeze(1)  # (B, 1, T, T)
+                top_tokens_mask[causal_mask < 0] = causal_mask[causal_mask < 0]  # (B, 1, T, T)
 
             hidden_states = layer_outputs[0]
 
