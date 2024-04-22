@@ -42,7 +42,7 @@ def convert_to_skip_attn_llama(
     causal_model: LlamaForCausalLM,
     base_attn_layer: int = 2,
     predicted_attn_layers: Sequence[slice] = (slice(3, -1),),
-    topk_tokens: int = 8,
+    topk: int = 8,
 ) -> None:
     # https://github.com/huggingface/transformers/blob/v4.39.3/src/transformers/models/llama/modeling_llama.py#L940
     def skip_attn_forward(
@@ -138,20 +138,20 @@ def convert_to_skip_attn_llama(
                 )
 
             if i == base_attn_layer:
-                token_attn = layer_outputs[1]  # (B, H, T, T)
-                token_attn = token_attn.sum(dim=1)  # (B, T, T)  how much each token is paid attention to across heads
+                token_attn = layer_outputs[1]  # (B, H, T_O, T_I)
+                token_attn = token_attn.sum(dim=1)  # (B, T_O, T_I)  how much each token is paid attention to across heads
 
-                k = min(topk_tokens, token_attn.shape[-1])
-                top_tokens = token_attn.topk(k, dim=-1).indices  # (B, T, topk)
+                k = min(topk, token_attn.shape[-1])
+                top_tokens = token_attn.topk(k, dim=-1).indices  # (B, T_O, topk)
 
                 dtype, device = hidden_states.dtype, hidden_states.device
                 min_dtype = th.finfo(dtype).min
-                top_tokens_mask = th.full_like(token_attn, min_dtype, dtype=dtype, device=device)  # (B, T, T)
-                top_tokens_mask.scatter_(-1, top_tokens, 0)  # (B, T, T), top tokens are 0, rest are -inf
+                top_tokens_mask = th.full_like(token_attn, min_dtype, dtype=dtype, device=device)  # (B, T_O, T_I)
+                top_tokens_mask.scatter_(-1, top_tokens, 0)  # (B, T_O, T_I), top tokens are 0, rest are -inf
 
                 # logical and with causal mask
-                top_tokens_mask = top_tokens_mask.unsqueeze(1)  # (B, 1, T, T)
-                top_tokens_mask[causal_mask < 0] = causal_mask[causal_mask < 0]  # (B, 1, T, T)
+                top_tokens_mask = top_tokens_mask.unsqueeze(1)  # (B, 1, T_O, T_I)
+                top_tokens_mask[causal_mask < 0] = causal_mask[causal_mask < 0]  # (B, 1, T_O, T_I)
 
             hidden_states = layer_outputs[0]
 

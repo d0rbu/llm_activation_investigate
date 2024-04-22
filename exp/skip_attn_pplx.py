@@ -16,6 +16,75 @@ FORWARD_FNS = {
 }
 
 
+def skip_attention_harness_eval(
+    model_names: Sequence[str] = ["meta-llama/Llama-2-7b-hf"],
+    tasks: Sequence[str] = ["winogrande", "wikitext", "hellaswag"],
+    output_dir: str = "out",
+    batch_size: int | None = None,
+    topk: int = 32,
+) -> None:
+    output_location = os.path.join(output_dir, "skip_attn_harness_eval")
+    results = []
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    if os.path.exists(output_location):
+        with open(output_location, "r") as f:
+            results = json.load(f)
+
+    from lm_eval import evaluator
+    from lm_eval.tasks import initialize_tasks
+    from lm_eval.models.huggingface import HFLM
+
+    for model_name in tqdm(model_names, total=len(model_names), desc="Evaluating models on lm harness eval tasks"):
+        current_tasks = set([task for task in tasks])
+
+        # check if results already exist
+        found_task_results = {}
+        for row in results:
+            if row["model"] == model_name and row["topk"] == topk:
+                found_task_results = row["task_results"]
+                found_result_tasks = set(found_task_results.keys())
+                current_tasks -= found_result_tasks
+                break
+
+        if len(current_tasks) == 0:
+            continue
+
+        model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+
+        # change model forward function to use skip attention
+        if type(model) in FORWARD_FNS:
+            normal_forward_fn, skip_attn_fn = FORWARD_FNS[type(model)]
+        else:
+            raise ValueError(f"Model type {type(model)} not supported for skip attention")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        model.resize_token_embeddings(len(tokenizer))
+        model.eval()
+        skip_attn_fn(model, topk=topk)
+
+        result = {
+            "model": model_name,
+            "topk": topk,
+            "task_results": found_task_results,
+        }
+
+        with th.no_grad():
+            raw_results = evaluator.simple_evaluate(
+                model=model,
+                tasks=list(current_tasks),
+                batch_size="auto",
+            )
+            result["task_results"].update(raw_results["results"])
+
+        results.append(result)
+        with open(output_location, "w") as f:
+            json.dump(results, f, indent=4)
+
+
 def skip_attention_perplexity(
     model_names: Sequence[str] = ["meta-llama/Llama-2-7b-hf"],
     dataset_names: Sequence[str] = ["ivanzhouyq/RedPajama-Tiny"],
@@ -23,8 +92,9 @@ def skip_attention_perplexity(
     batch_size: int | None = None,
     truncate_dataset: int = 0,
     max_length: int = 0,
+    topk: int = 32,
 ) -> None:
-    output_location = os.path.join(output_dir, "skip_attn_pplx.json")
+    output_location = os.path.join(output_dir, "skip_attn_dataset_pplx.json")
     results = []
 
     if not os.path.exists(output_dir):
@@ -42,7 +112,7 @@ def skip_attention_perplexity(
     }
     for dataset_name, model_name in tqdm(product(dataset_names, model_names), total=len(dataset_names) * len(model_names), desc="Evaluating models on datasets"):
         # check if results already exist
-        if any(row["model"] == model_name and row["dataset"] == dataset_name for row in results):
+        if any(row["model"] == model_name and row["dataset"] == dataset_name and row["topk"] == topk for row in results):
             continue
 
         if current_model != model_name:
@@ -115,6 +185,7 @@ def skip_attention_perplexity(
         result = {
             "model": model_name,
             "dataset": dataset_name,
+            "topk": topk,
             "perplexities": [],
             "avg_perplexity": 0.0,
             "perplexities_skip_attn": [],
@@ -127,7 +198,7 @@ def skip_attention_perplexity(
 
         with th.no_grad():
             print("Computing skip attention perplexities...")
-            skip_attn_fn(model)  # convert model to use skip attention
+            skip_attn_fn(model, topk=topk)  # convert model to use skip attention
 
             for i, batch in tqdm(enumerate(data_loader), total=num_batches, desc="Computing skip attention perplexities"):
                 batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length).to(model.device)
@@ -176,18 +247,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_names", type=str, nargs="+", default=["meta-llama/Llama-2-7b-hf"])
     parser.add_argument("--datasets", type=str, nargs="+", default=["ivanzhouyq/RedPajama-Tiny"])
+    parser.add_argument("--tasks", type=str, nargs="+", default=["winogrande", "wikitext", "hellaswag"])
     parser.add_argument("--output_dir", type=str, default="out")
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--truncate_dataset", type=int, default=0)
     parser.add_argument("--max_length", type=int, default=0)
+    parser.add_argument("--topk", type=int, default=32)
 
     args = parser.parse_args()
 
-    skip_attention_perplexity(
-        model_names=args.model_names,
-        dataset_names=args.datasets,
-        output_dir=args.output_dir,
-        batch_size=args.batch_size,
-        truncate_dataset=args.truncate_dataset,
-        max_length=args.max_length,
-    )
+    if len(args.datasets) > 0:
+        skip_attention_perplexity(
+            model_names=args.model_names,
+            dataset_names=args.datasets,
+            output_dir=args.output_dir,
+            batch_size=args.batch_size,
+            truncate_dataset=args.truncate_dataset,
+            max_length=args.max_length,
+            topk=args.topk,
+        )
+        th.cuda.empty_cache()
+
+    if len(args.tasks) > 0:
+        skip_attention_harness_eval(
+            model_names=args.model_names,
+            tasks=args.tasks,
+            output_dir=args.output_dir,
+            batch_size=args.batch_size,
+            topk=args.topk,
+        )
