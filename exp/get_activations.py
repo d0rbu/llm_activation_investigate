@@ -67,7 +67,7 @@ def get_activations(
                 print(f"Attempting batch size {batch_size}...")
 
                 test_batch = dataset[:batch_size]
-                test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length)
+                test_batch = tokenizer(test_batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length).to(model.device)
 
                 th.cuda.empty_cache()
 
@@ -109,7 +109,7 @@ def get_activations(
 
         samples = 0
         for i, batch in tqdm(zip(range(num_batches), data_loader), total=min(len(data_loader), num_batches)):
-            batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length, return_attention_mask=get_attentions)
+            batch = tokenizer(batch["text"], padding=True, truncation=True, return_tensors="pt", max_length=max_length, return_attention_mask=get_attentions).to(model.device)
             samples += batch["input_ids"].shape[0]
 
             th.cuda.empty_cache()
