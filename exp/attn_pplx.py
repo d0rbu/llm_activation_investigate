@@ -256,7 +256,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_names", type=str, nargs="+", default=["meta-llama/Llama-2-7b-hf"])
     parser.add_argument("--datasets", type=str, nargs="+", default=["ivanzhouyq/RedPajama-Tiny"])
-    parser.add_argument("--tasks", type=str, nargs="+", default=["winogrande", "wikitext", "hellaswag"])
+    parser.add_argument("--tasks", type=str, nargs="+", default=["winogrande", "wikitext", "hellaswag", "math", "gsm8k", "humaneval", "piqa", "sciq"])
     parser.add_argument("--output_dir", type=str, default="out")
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--truncate_dataset", type=int, default=0)

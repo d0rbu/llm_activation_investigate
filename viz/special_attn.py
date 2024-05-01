@@ -40,12 +40,12 @@ def graph_special_attns(
     truncate_first: int = 0,
     show: bool = False,
 ) -> None:
-    for file_suffix, measure_name in zip(["dataset_pplx.json", "harness_eval.json"], MEASURES):
+    for file_suffix, measure_name in zip(["dataset_pplx", "harness_eval"], MEASURES):
         # search for all files with the given suffix
         data_paths = []
         for root, _, files in os.walk(output_dir):
             for file in files:
-                if file.endswith(file_suffix):
+                if file.endswith(f"{file_suffix}.json"):
                     data_paths.append(os.path.join(root, file))
         
         for special_attn_type, special_attn_name in zip(SPECIAL_ATTN_TYPES, ["Skip Attention"]):
@@ -53,7 +53,7 @@ def graph_special_attns(
 
             # Load data
             print(f"Loading {special_attn_name} {measure_name} data...")
-            with open(os.path.join(output_dir, f"{special_attn_type}_{file_suffix}"), "r") as f:
+            with open(os.path.join(output_dir, f"{special_attn_type}_{file_suffix}.json"), "r") as f:
                 data = json.load(f)
                 data = pd.DataFrame(data)
 
@@ -100,7 +100,7 @@ def graph_special_attns(
                 ax.set_xlabel("Top K")
                 ax.set_ylabel(measure_name)
                 ax.set_title(f"{special_attn_name}{title_params}")
-                plt.savefig(os.path.join(figures_dir, f"{special_attn_type}{filename_params}.png"))
+                plt.savefig(os.path.join(figures_dir, f"{special_attn_type}_{file_suffix}_{filename_params}.png"))
 
                 if show:
                     plt.show()
