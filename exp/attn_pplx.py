@@ -75,7 +75,7 @@ def harness_eval(
             if current_model != model_name:
                 # load model
                 current_model = model_name
-                model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+                model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation="eager", device_map="auto")
 
                 # change model forward function to use special attention
                 if type(model) in FORWARD_FNS:
@@ -156,7 +156,7 @@ def perplexity(
             if current_model != model_name:
                 # load model
                 current_model = model_name
-                model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+                model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation="eager", device_map="auto")
 
                 # change model forward function to use skip attention
                 if type(model) in FORWARD_FNS:
