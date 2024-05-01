@@ -95,6 +95,7 @@ def harness_eval(
             }
 
             with th.no_grad():
+                print(f"Evaluating tasks: {current_tasks}...")
                 raw_results = evaluator.simple_evaluate(
                     model=lm,
                     tasks=list(current_tasks),
