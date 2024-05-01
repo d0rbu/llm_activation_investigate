@@ -26,15 +26,12 @@ def harness_eval(
     batch_size: int | None = None,
     topk_values: Sequence[int] = [2 ** i for i in range(13)],
 ) -> None:
-    skip_attn_output_dir = os.path.join(output_dir, "skip_attn_harness_eval.json")
-    reuse_attn_output_dir = os.path.join(output_dir, "reuse_attn_harness_eval.json")
+    skip_attn_output_path = os.path.join(output_dir, "skip_attn_harness_eval.json")
+    reuse_attn_output_path = os.path.join(output_dir, "reuse_attn_harness_eval.json")
     _topk_values = topk_values
 
-    if not os.path.exists(skip_attn_output_dir):
-        os.makedirs(skip_attn_output_dir)
-
-    if not os.path.exists(reuse_attn_output_dir):
-        os.makedirs(reuse_attn_output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     from lm_eval import evaluator
     from lm_eval.tasks import initialize_tasks
@@ -42,7 +39,7 @@ def harness_eval(
 
     initialize_tasks(verbosity = "INFO")
 
-    for special_fn_idx, output_location in enumerate([skip_attn_output_dir, reuse_attn_output_dir]):
+    for special_fn_idx, output_location in enumerate([skip_attn_output_path, reuse_attn_output_path]):
         if os.path.exists(output_location):
             with open(output_location, "r") as f:
                 results = json.load(f)
@@ -119,17 +116,14 @@ def perplexity(
     max_length: int = 0,
     topk_values: Sequence[int] = [2 ** i for i in range(13)],
 ) -> None:
-    skip_attn_output_dir = os.path.join(output_dir, "skip_attn_harness_eval.json")
-    reuse_attn_output_dir = os.path.join(output_dir, "reuse_attn_harness_eval.json")
+    skip_attn_output_path = os.path.join(output_dir, "skip_attn_harness_eval.json")
+    reuse_attn_output_path = os.path.join(output_dir, "reuse_attn_harness_eval.json")
     _topk_values = topk_values
 
-    if not os.path.exists(skip_attn_output_dir):
-        os.makedirs(skip_attn_output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    if not os.path.exists(reuse_attn_output_dir):
-        os.makedirs(reuse_attn_output_dir)
-
-    for special_fn_idx, output_location in enumerate([skip_attn_output_dir, reuse_attn_output_dir]):
+    for special_fn_idx, output_location in enumerate([skip_attn_output_path, reuse_attn_output_path]):
         if os.path.exists(output_location):
             with open(output_location, "r") as f:
                 results = json.load(f)
