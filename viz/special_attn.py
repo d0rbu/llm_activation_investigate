@@ -10,7 +10,7 @@ from collections import defaultdict
 
 
 SPECIAL_ATTN_TYPES = ["skip_attn", "reuse_attn"]
-MEASURES = ["Perplexity", "Average LM Harness Accuracy"]
+MEASURES = ["Perplexity", "Average LM Harness Accuracy", "Average LM Harness Perplexity"]
 NO_GROUPBY = {
     "all": [None]
 }
@@ -33,6 +33,18 @@ def get_score_lm_harness_accuracy(row: pd.Series) -> float:
     return sum_acc / n_acc if n_acc > 0 else 0.0
 
 
+def get_score_lm_harness_perplexity(row: pd.Series) -> float:
+    task_results = row["task_results"]
+    sum_pplx = 0
+    n_pplx = 0
+    for task, results in task_results.items():
+        if "word_perplexity,none" in results:
+            sum_pplx += results["word_perplexity,none"]
+            n_pplx += 1
+
+    return sum_pplx / n_pplx if n_pplx > 0 else 0.0
+
+
 def graph_special_attns(
     output_dir: str = "out",
     figures_dir: str = "figures",
@@ -40,7 +52,7 @@ def graph_special_attns(
     truncate_first: int = 0,
     show: bool = False,
 ) -> None:
-    for file_suffix, measure_name in zip(["dataset_pplx", "harness_eval"], MEASURES):
+    for file_suffix, measure_name in zip(["dataset_pplx", "harness_eval", "harness_eval"], MEASURES):
         # search for all files with the given suffix
         data_paths = []
         for root, _, files in os.walk(output_dir):
@@ -84,6 +96,8 @@ def graph_special_attns(
                     scores = group_data.apply(get_score_perplexity, axis=1)
                 elif measure_name == MEASURES[1]:
                     scores = group_data.apply(get_score_lm_harness_accuracy, axis=1)
+                elif measure_name == MEASURES[2]:
+                    scores = group_data.apply(get_score_lm_harness_perplexity, axis=1)
 
                 param_strings = [f"{param}={val}" for param, val in zip(groupby, groupby_vals)]
                 if groupby_params == NO_GROUPBY:
@@ -91,7 +105,7 @@ def graph_special_attns(
                     filename_params = ""
                 else:
                     title_params = " " + ", ".join(param_strings).replace("/", "-")
-                    filename_params = " " + "_".join(param_strings).replace("/", "-")
+                    filename_params = "_" + "_".join(param_strings).replace("/", "-")
 
                 # Plot topk vs scores, log scale
                 fig, ax = plt.subplots()
