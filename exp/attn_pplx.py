@@ -116,8 +116,8 @@ def perplexity(
     max_length: int = 0,
     topk_values: Sequence[int] = [2 ** i for i in range(13)],
 ) -> None:
-    skip_attn_output_path = os.path.join(output_dir, "skip_attn_harness_eval.json")
-    reuse_attn_output_path = os.path.join(output_dir, "reuse_attn_harness_eval.json")
+    skip_attn_output_path = os.path.join(output_dir, "skip_attn_perplexity.json")
+    reuse_attn_output_path = os.path.join(output_dir, "reuse_attn_perplexity.json")
     _topk_values = topk_values
 
     if not os.path.exists(output_dir):
