@@ -208,8 +208,8 @@ def convert_to_skip_attn_mistral(
 
         if position_ids is None:
             device = input_ids.device if input_ids is not None else inputs_embeds.device
-            position_ids = torch.arange(
-                past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
+            position_ids = th.arange(
+                past_key_values_length, seq_length + past_key_values_length, dtype=th.long, device=device
             )
             position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
         else:

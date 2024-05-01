@@ -8,13 +8,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM, 
 from tqdm import tqdm
 from typing import Sequence
 from itertools import product
-from core.skip_attn import convert_to_skip_attn_llama
-from core.reuse_attn import convert_to_reuse_attn_llama
-from core.vanilla import convert_to_vanilla_attn_llama
+from core.skip_attn import convert_to_skip_attn_llama, convert_to_skip_attn_mistral
+from core.reuse_attn import convert_to_reuse_attn_llama, convert_to_reuse_attn_mistral
+from core.vanilla import convert_to_vanilla_attn_llama, convert_to_vanilla_attn_mistral
 
 
 FORWARD_FNS = {
-    LlamaForCausalLM: (convert_to_vanilla_attn_llama, convert_to_skip_attn_llama, convert_to_reuse_attn_llama)
+    LlamaForCausalLM: (convert_to_vanilla_attn_llama, convert_to_skip_attn_llama, convert_to_reuse_attn_llama),
+    MistralForCausalLM: (convert_to_vanilla_attn_mistral, convert_to_skip_attn_mistral, convert_to_reuse_attn_mistral),
 }
 
 
@@ -78,7 +79,7 @@ def harness_eval(
 
                 # change model forward function to use special attention
                 if type(model) in FORWARD_FNS:
-                    convert_fn = FORWARD_FNS[special_fn_idx + 1]
+                    convert_fn = FORWARD_FNS[type(model)][special_fn_idx + 1]
                 else:
                     raise ValueError(f"Model type {type(model)} not supported for special attention functions")
 
@@ -159,7 +160,7 @@ def perplexity(
 
                 # change model forward function to use skip attention
                 if type(model) in FORWARD_FNS:
-                    convert_fn = FORWARD_FNS[special_fn_idx + 1]
+                    convert_fn = FORWARD_FNS[type(model)][special_fn_idx + 1]
                 else:
                     raise ValueError(f"Model type {type(model)} not supported for special attention functions")
 
