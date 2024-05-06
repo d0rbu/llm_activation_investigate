@@ -10,7 +10,7 @@ from collections import defaultdict
 
 
 SPECIAL_ATTN_TYPES = ["skip_attn", "reuse_attn"]
-MEASURES = ["Perplexity", "Average LM Harness Accuracy", "Average LM Harness Perplexity"]
+MEASURES = ["Perplexity", "Average LM Harness Accuracy", "Average LM Harness Perplexity", "LM Harness Accuracies"]
 NO_GROUPBY = {
     "all": [None]
 }
@@ -33,6 +33,31 @@ def get_score_lm_harness_accuracy(row: pd.Series) -> float:
     return sum_acc / n_acc if n_acc > 0 else 0.0
 
 
+def get_score_lm_harness_accuracies(group_data: pd.DataFrame) -> tuple[list[str], list[list[float]]]:
+    sorted_data = group_data.sort_values("topk")
+    legend = []
+    scores = {}
+    for row in tqdm(sorted_data.itertuples(), total=len(sorted_data)):
+        task_results = row.task_results
+        for task, results in task_results.items():
+            if "acc,none" in results:
+                if task not in scores:
+                    scores[task] = []
+                scores[task].append(results["acc,none"])
+                if task not in legend:
+                    legend.append(task)
+            elif "exact_match,get-answer" in results:
+                if task not in scores:
+                    scores[task] = []
+                scores[task].append(results["exact_match,get-answer"])
+                if task not in legend:
+                    legend.append(task)
+    
+    scores = [scores[task] for task in legend]
+
+    return legend, scores
+
+
 def get_score_lm_harness_perplexity(row: pd.Series) -> float:
     task_results = row["task_results"]
     sum_pplx = 0
@@ -52,7 +77,7 @@ def graph_special_attns(
     truncate_first: int = 0,
     show: bool = False,
 ) -> None:
-    for file_suffix, measure_name in zip(["dataset_pplx", "harness_eval", "harness_eval"], MEASURES):
+    for file_suffix, measure_name in zip(["dataset_pplx", "harness_eval", "harness_eval", "harness_eval"], MEASURES):
         # search for all files with the given suffix
         data_paths = []
         for root, _, files in os.walk(output_dir):
@@ -90,6 +115,7 @@ def graph_special_attns(
                     groupby_filter = slice(None)
 
                 group_data = data[groupby_filter]
+                legend = None
 
                 # Get scores
                 if measure_name == MEASURES[0]:
@@ -98,23 +124,31 @@ def graph_special_attns(
                     scores = group_data.apply(get_score_lm_harness_accuracy, axis=1)
                 elif measure_name == MEASURES[2]:
                     scores = group_data.apply(get_score_lm_harness_perplexity, axis=1)
+                elif measure_name == MEASURES[3]:
+                    legend, scores = get_score_lm_harness_accuracies(group_data)
 
                 param_strings = [f"{param}={val}" for param, val in zip(groupby, groupby_vals)]
                 if groupby_params == NO_GROUPBY:
                     title_params = ""
                     filename_params = ""
                 else:
-                    title_params = " " + ", ".join(param_strings).replace("/", "-")
+                    title_params = " " + ", ".join(groupby_vals)
                     filename_params = "_" + "_".join(param_strings).replace("/", "-")
 
                 # Plot topk vs scores, log scale
                 fig, ax = plt.subplots()
-                ax.plot(group_data["topk"][truncate_first:], scores[truncate_first:], marker="o", linestyle="-", color="b")
+                if legend is None:
+                    ax.plot(group_data["topk"][truncate_first:], scores[truncate_first:], marker="o", linestyle="-")
+                else:
+                    for score in scores:
+                        ax.plot(group_data["topk"][truncate_first:], score[truncate_first:], marker="o", linestyle="-")
+                    ax.legend(legend)
                 ax.set_xscale("log")
                 ax.set_xlabel("Top K")
                 ax.set_ylabel(measure_name)
-                ax.set_title(f"{special_attn_name}{title_params}")
-                plt.savefig(os.path.join(figures_dir, f"{special_attn_type}_{file_suffix}_{filename_params}.png"))
+                # ax.set_title(f"{special_attn_name}{title_params}")
+                ax.set_title(f"{title_params}")
+                plt.savefig(os.path.join(figures_dir, f"{special_attn_type} {measure_name} {filename_params}.png"))
 
                 if show:
                     plt.show()
